@@ -68,6 +68,8 @@ mainWindowActivateWindowProc :: () {
 // It seems to be 100% safe in my extensive testing to do this.
 // It's even done this way in the Odin WindowProc example. (Odin also has a context.)
 // At the end of the day, we're sticking to one context per thread. Seems fine.
+// And... one last piece of evidence: The window proc is only ever called when we DispatchMessageW.
+// So it's completely safe and predictable when this code will run. All good.
 mainContext: *#Context;
 
 mainWindowMinimumSize: POINT;
