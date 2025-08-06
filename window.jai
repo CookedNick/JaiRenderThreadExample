@@ -15,12 +15,12 @@ initMainWindow :: () {
 		mainWindowClass.hInstance = hInstance;
 		hCursor = LoadCursorW(null, IDC_ARROW);
 		lpszClassName = mainWindowClassName;
-		hbrBackground = CreateSolidBrush(0);
+		hbrBackground = null; // CreateSolidBrush(0);
 		lpfnWndProc = DefWindowProcW; // The default windowproc handles WM_CLOSE, which is all we need for now to stay responsive.
 		RegisterClassExW(*mainWindowClass);
 	}
 	mainContext = *context;
-	mainWindow = CreateWindowExW(0, mainWindowClassName, wide("A great window"), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, null, null, hInstance, null);
+	mainWindow = CreateWindowExW(0, mainWindowClassName, wide("A great window. Press Space to pause/resume animation."), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, null, null, hInstance, null);
 	UpdateWindow(mainWindow);
 	
 	GetClientRect(mainWindow, *reusableRECT);
@@ -30,10 +30,65 @@ initMainWindow :: () {
 
 mainWindowReceiveMessages :: () {
 	while GetMessageW(*reusableMSG, null, 0, 0) {
-		if reusableMSG.message == {
+		isRepeating :: (lParam: s64) -> bool {
+			return cast(bool) ((lParam & (1 << 30)) >> 30);
+		}
+		
+		isPressed :: (key: s32) -> bool {
+			return cast(bool) (GetKeyState(key) & 0b100000000000000);
+		}
+		
+		using reusableMSG;
+		
+		if message == {
 			case WM_QUIT;
 				return;
-			// TODO: Keyboard/mouse.
+			case WM_KEYDOWN;
+				if wParam == {
+					case #char " ";
+						if !isRepeating(lParam) {
+							// Pause/Resume animation
+							
+							// I know everyone likes performance counters (Basic.current_time_monotonic() uses one),
+							// but the value of GetTickCount64() is that it will give you the exact same timestamp
+							// in milliseconds as the keydown event. So this timestamp is much closer to the actual time of keypress.
+							// current_time_monotonic() will be a more precise measurement (sub-ms), but it will be report a later time than the event.
+							eventT := GetTickCount64();
+							EnterCriticalSection(*renderThreadCriticalSection);
+							
+							if renderFlags & .animating {
+								print("?");
+								// The animation is playing. Pause it.
+								renderFlags -= .animating;
+								
+								// We're not going to render indefinitely anymore.
+								renderFlags &= ~.renderIndefinitely;
+								
+								// But we do need to render this end frame.
+								renderFlags |= .renderAtLeastOneMoreFrame;
+								
+								// And let's update the animation up to the timestamp of this keypress.
+								updateBackgroundAnimation(eventT);
+								
+								// If the animation is playing, we can assume the render thread was active. So no need to wake.
+								print("%\n", renderFlags);
+							} else {
+								print("!");
+								// The animation is not playing. Start it.
+								renderFlags |= (.renderIndefinitely | .animating);
+								print("%\n", renderFlags);
+								
+								// Resuming from the time of the keypress.
+								animationLastUpdateT = eventT;
+								
+								// Wake the render thread if needed.
+								WakeConditionVariable(*renderThreadWakeConditionVariable);
+							}
+							
+							LeaveCriticalSection(*renderThreadCriticalSection);
+							continue;
+						}
+				}
 		}
 		
 		TranslateMessage(*reusableMSG);
@@ -60,9 +115,14 @@ mainWindowActivateWindowProc :: () {
 }
 
 
+GetTickCount64 :: () -> u64 #foreign kernel32;
+
+
 #scope_file
 
 #import "Windows";
+user32 :: #system_library "user32";
+kernel32 :: #system_library "kernel32";
 
 // If you need to call Jai-things in the windowProc, you'll need to push this first.
 // It seems to be 100% safe in my extensive testing to do this.
@@ -90,11 +150,10 @@ mainWindowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #
 			WakeConditionVariable(*renderThreadWakeConditionVariable);
 			LeaveCriticalSection(*renderThreadCriticalSection);
 			
-			// This is here to prevent redundant WM_PAINT messages. We don't actually draw here.
-			BeginPaint(hWnd, *reusablePAINTSTRUCT);
-			EndPaint(hWnd, *reusablePAINTSTRUCT);
-			
-			return 0;
+			// Don't return 0.
+			// Grok told me to return 0 and do BeginPaint() and EndPaint() to prevent infinite WM_PAINT messages.
+			// But that seems to introduce some tearing/lag. If we instead just enter the default window proc, no drawing occurs.
+			// The event gets handled and things seem smooth.
 		case WM_SIZE;
 			EnterCriticalSection(*renderThreadCriticalSection);
 			mainWindowW = LOWORD(lParam);
@@ -161,7 +220,6 @@ PAINTSTRUCT :: struct {
 	rgbReserved: [32]u8; // BYTE array of 32 bytes
 }
 
-user32 :: #system_library "user32";
 WaitMessage :: () -> s32 #foreign user32;
 GetMessageW :: (lpMsg: *MSG, hWnd: *void, wMsgFilterMin: u32, wMsgFilterMax: u32) -> s32 #foreign user32;
 DispatchMessageW :: (msg: *MSG) -> s32 #foreign user32;

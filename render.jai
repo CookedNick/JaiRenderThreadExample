@@ -12,9 +12,17 @@ renderFlags: enum_flags u8 {
 	
 	// Use to tell the render thread to clean up and end itself.
 	renderThreadShouldExit :: 1 << 3;
-};
+	
+	// Demonstration of an animation that will play even during window resizes/moves.
+	animating :: 1 << 4;
+	
+	// This just means we're going negative instead of positive. Flips back and forth once per second.
+	animatingInReverse :: 1 << 5;
+} = .renderIndefinitely | .animating;
 
 renderThreadCriticalSection: RTL_CRITICAL_SECTION;
+
+animationLastUpdateT: u64;
 
 
 initRenderThread :: () {
@@ -36,9 +44,37 @@ initRenderThread :: () {
 renderThreadWakeConditionVariable: CONDITION_VARIABLE;
 
 
+// t == current time.
+updateBackgroundAnimation :: (t: u64) {
+	// Get the difference in ms between this frame and the last update.
+	diffThisFrame = t - animationLastUpdateT; // You could do a swap here and use one less var.
+	animationLastUpdateT = t;
+	
+	if renderFlags & .animatingInReverse {
+		animationProgress -= (cast(float)   diffThisFrame)/1000;
+		
+		if animationProgress <= 0 {
+			// Wrap back around.
+			animationProgress *= -1;
+			renderFlags -= .animatingInReverse;
+		}
+	} else {
+		animationProgress += (cast(float)   diffThisFrame)/1000;
+		
+		if animationProgress >= 1 {
+			// Wrap back around.
+			animationProgress -= (animationProgress - 1) * 2;
+			renderFlags |= .animatingInReverse;
+		}
+	}
+}
+
+
 #scope_file
 
 #import "Windows";
+Simp :: #import "Simp";
+GL :: #import "GL";
 
 renderThreadID: s32 = 1;
 renderThreadTemporaryStorage: Temporary_Storage;
@@ -56,12 +92,21 @@ enterRenderThread :: (_: *void) -> u32 #c_call {
 		// Most rendering APIs don't. (Do any?)
 		// So here is where you'd init that sort of thing. Not on the main thread.
 		// For now, it's just the skeleton. But try it. It will work.
+		Simp.set_render_target(mainWindow);
+		Simp.set_shader_for_color(true);
+		
+		// Enable vsync.
+		GL.wglSwapIntervalEXT(1);
+		
+		// Now that we're ready for rendering, show the window.
+		// The reason we wait this long is to have the shortest possible time with blank contents.
+		ShowWindow(mainWindow, SW_SHOW);
+		
+		// Start the animation.
+		animationLastUpdateT = GetTickCount64();
 		
 		// Render the first frame.
 		renderAFrame();
-		
-		// Now that the main window has contents, show it.
-		ShowWindow(mainWindow, SW_SHOW);
 		
 		// Activate the real window proc.
 		mainWindowActivateWindowProc();
@@ -72,7 +117,7 @@ enterRenderThread :: (_: *void) -> u32 #c_call {
 			// We live in this critical section by default to prevent data races.
 			// You can enter/leave this in any thread to modify data that also gets touched by the render thread.
 			// For example, player position in a game or inputted chars in a text editor.
-			// You can also use Jai's Mutex type for this (modules/Thread). Under the hood on Windows, that uses these critical sections.
+			// You can also use Jai's Mutex type for this (modules/Thread). Under the hood on Windows, that type uses these critical sections.
 			// I just don't personally need all the extra stuff the Jai version does. But, Mutex is cross-platform. That's something.
 			EnterCriticalSection(*renderThreadCriticalSection);
 			
@@ -91,36 +136,57 @@ enterRenderThread :: (_: *void) -> u32 #c_call {
 			renderAFrame();
 			LeaveCriticalSection(*renderThreadCriticalSection);
 			// Here is where other threads have a chance to modify data.
+			reset_temporary_storage();
+			
+			// Prevents a ton of lag and thread-fighting when rendering indefinitely.
+			sleep_milliseconds(1);
 		}
 	
 		// Clean up if needed.
 		LeaveCriticalSection(*renderThreadCriticalSection);
-		print("\nThe render thread is exiting.\n");
-		
-		#import "Debug";
-		breakpoint();
+		print("The render thread is exiting.\n");
 	}
 	
 	return 0;
 }
 
-// Assumes we are in the critical section.
+
+// Animation vars
+t: u64;
+diffThisFrame: u64;
+animationProgress: float; // 0-1
+
+
+// Assumes we are in the critical section. It's safe to touch data.
+// You might want to only enter the critical section when actually accessing the data.
+// This allows other threads more chances to get their work done on it.
+// The only caveat is you don't want to have this desynced.
+// For example, if a keypress swaps dark mode mid-frame, you might have half the elements dark and half of them light.
+// So you want to only enter the critical section once per frame. That will prevent this issue.
 renderAFrame :: () {
 	// Check if we need to resize interface elements.
 	if renderFlags & .windowSizeChanged {
 		renderFlags -= .windowSizeChanged;
+		Simp.update_window(mainWindow);
 		// TODO: Resize interface elements.
 		
 		// TEMP: Just demonstrating that it works.
-		print("\nNew Window Size: w=%, h=%\n", mainWindowW, mainWindowH);
+		print("New Window Size: w=%, h=%\n", mainWindowW, mainWindowH);
 	}
 	
-	// You would render a frame here.
-	// Something like:
-	// hdc := GetDC(mainWindow);
-	// // render
-	// ReleaseDC(mainWindow, hdc);
+	if renderFlags & .animating {
+		// This is a little imperfect. We should be updating it to the estimated time of the swap_buffers call below,
+		// not "now" just as we need the data. See https://www.youtube.com/watch?v=yGhfUcPjXuE for a masterclass on deltaTime.
+		updateBackgroundAnimation(GetTickCount64());
+	}
 	
-	// TEMP: Show we're "rendering" something.
-	print(".");
+	// Background. Overflow w and h a little for smooth resizes.
+	Simp.immediate_quad(0, 0, (cast(float) mainWindowW) + 200, (cast(float) mainWindowH) + 200, .{animationProgress, animationProgress, animationProgress, 1});
+	
+	// Red, green, and blue squares.
+	Simp.immediate_quad(50, 50, ((cast(float) mainWindowW)/3) - 25, ((cast(float) mainWindowH)/3) - 50, .{1, 0, 0, 1 - animationProgress/4});
+	Simp.immediate_quad(((cast(float) mainWindowW)/3) + 25, 50, ((cast(float) mainWindowW)*2/3) - 25, ((cast(float) mainWindowH)/3) - 50, .{0, 1, 0, 1 - animationProgress/4});
+	Simp.immediate_quad(((cast(float) mainWindowW)*2/3) + 25, 50, (cast(float) mainWindowW) - 50, ((cast(float) mainWindowH)/3) - 50, .{0, 0, 1, 1 - animationProgress/4});
+	
+	Simp.swap_buffers(mainWindow);
 }

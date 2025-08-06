@@ -9,3 +9,11 @@ main :: () {
 	inline mainWindowReceiveMessages();
 	// Do any final cleanup you want here.
 }
+
+
+#if OS == .WINDOWS {
+	#run {
+		WR :: #import "Windows_Resources";
+		WR.disable_runtime_console();
+	}
+}
