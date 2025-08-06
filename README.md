@@ -9,7 +9,7 @@ Yo yo yo. Windows programmers. I have spent a lot of time perfecting this window
 
 ### To recap, the great things about this setup are:
 - By default, 0% CPU/GPU usage. Until a WM_ message is received. **No sleep calls (faking low CPU usage) necessary.** You do work when there's work.
-- A few bits and bobs I like the procedure `mainWindowUpdateMinimumSize`. This sort of utility is nice to have if you want that level of control over how your GUI will look. I would consider this a necessary level of polish for production apps.
+- A few bits and bobs like the procedure `mainWindowUpdateMinimumSize`. This sort of utility is nice to have if you want that level of control over how your GUI will look. I would consider this a necessary level of polish for production apps.
 - Windows messages no longer block rendering. So just like your web browser, file explorer, and pretty much every other piece of software on Earth (except.. games), yours too will be able to render *while* a user drags/resizes your window. Utter black magic, I know.
 
 ### Kaveats:
