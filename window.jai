@@ -148,7 +148,7 @@ mainWindowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #
 			
 			// Don't return 0.
 			// Grok told me to return 0 and do BeginPaint() and EndPaint() to prevent infinite WM_PAINT messages.
-			// But that seems to introduce some tearing/lag. If we instead just enter the default window proc, no drawing occurs.
+			// But that seems to introduce some tearing/lag. If we instead just fall through and pass the message to the default window proc, no drawing occurs.
 			// The event gets handled and things seem smooth.
 		case WM_SIZE;
 			EnterCriticalSection(*renderThreadCriticalSection);
