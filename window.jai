@@ -57,7 +57,6 @@ mainWindowReceiveMessages :: () {
 							EnterCriticalSection(*renderThreadCriticalSection);
 							
 							if renderFlags & .animating {
-								print("?");
 								// The animation is playing. Pause it.
 								renderFlags -= .animating;
 								
@@ -71,12 +70,9 @@ mainWindowReceiveMessages :: () {
 								updateBackgroundAnimation(eventT);
 								
 								// If the animation is playing, we can assume the render thread was active. So no need to wake.
-								print("%\n", renderFlags);
 							} else {
-								print("!");
 								// The animation is not playing. Start it.
 								renderFlags |= (.renderIndefinitely | .animating);
-								print("%\n", renderFlags);
 								
 								// Resuming from the time of the keypress.
 								animationLastUpdateT = eventT;
