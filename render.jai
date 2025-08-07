@@ -179,9 +179,9 @@ renderAFrame :: () {
 		// not "now" just as we need the data. See https://www.youtube.com/watch?v=yGhfUcPjXuE for a masterclass on deltaTime.
 		updateBackgroundAnimation(GetTickCount64());
 	}
-	
-	// Background. Overflow w and h a little for smooth resizes.
-	Simp.immediate_quad(0, 0, (cast(float) mainWindowW) + 200, (cast(float) mainWindowH) + 200, .{animationProgress, animationProgress, animationProgress, 1});
+
+	// Background. Don't clear the render target! It causes flashing during resizes. Instead, just draw over the whole window.
+	Simp.immediate_quad(0, 0, (cast(float) mainWindowW), (cast(float) mainWindowH), .{animationProgress, animationProgress, animationProgress, 1});
 	
 	// Red, green, and blue squares.
 	Simp.immediate_quad(50, 50, ((cast(float) mainWindowW)/3) - 25, ((cast(float) mainWindowH)/3) - 50, .{1, 0, 0, 1 - animationProgress/4});
