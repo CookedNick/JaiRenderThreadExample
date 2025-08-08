@@ -1,11 +1,11 @@
 Hi! This took me a long time to figure out. So here you go.
 
-## The problem
+## The problem we're solving
 In Windows (and most operating systems), moving or resizing a window will block the main thread of that program. This is because the OS will enter a "modal loop" in which it absolutely does not want you to have any control..
 If you use `CS_HREDRAW | CS_VREDRAW` in your window class's style property, Windows will send you a WM_PAINT message when your contents are no longer valid, and drawing *when you receive this message* is the official way to do smooth resizing in Windows.
 That's good! We can render when Windows tells us we need to render! Though one issue remains: **No 60 fps.** Windows will only send us that message when the window's w/h actually change or the window is moved back on-screen by 1+ pixel from being previously off-screen.
 
-## The solution
+## A solution
 Here I've solved this by rendering in a background thread. This enables two things:
 1. **Full fps during window resizes/moves.**
 2. **The main thread can now be solely dedicated to receiving OS messages.** The main benefit of this is the ability to receive key presses and such mid-frame. You could use this to start calculations or work related to user input *for the next frame* while the previous frame is still being drawn.
