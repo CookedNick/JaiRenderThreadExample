@@ -1,5 +1,4 @@
 #import "Basic";
-#import "Atomics";
 #load "window.jai";
 #load "render.jai";
 
