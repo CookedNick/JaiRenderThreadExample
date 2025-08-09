@@ -15,6 +15,7 @@ This is the same solution web browsers use to keep playing a YouTube video while
 Those browsers (and Steam) fail to smoothly resize because they don't wait for the new frame to actually finish drawing before returning from WM_PAINT.
 In other words, Windows is being given the go-ahead to actually resize the window and display it in its new size before it has a frame ready for the new size.
 In this example, we've circumvented that problem by simply putting the main thread to sleep, in the middle of WM_PAINT, until the render thread reports back that it drew our requested frame. If you do this before calling EndPaint() and returning from WM_PAINT, you get smooth resizes.
+**Thank you, Patrik Smělý, for telling me about this approach.** (He got this working on macOS first.)
 
 ## A few extra details
 - If we're not animating, we don't render! 0% CPU/GPU in that case. Laptop users love us.
