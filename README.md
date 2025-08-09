@@ -11,16 +11,10 @@ Here I've solved this by rendering in a background thread. This enables two thin
 2. **The main thread can now be solely dedicated to receiving OS messages.** The main benefit of this is the ability to receive key presses and such mid-frame. You could use this to start calculations or work related to user input *for the next frame* while the previous frame is still being drawn.
 This is the same solution web browsers use to keep playing a YouTube video while you stretch their windows. Only, web browsers tend to display artifacts during resizes. Check for yourself. Steam is also a program that is rather bad with these artifacts.
 
-## How we avoid artifacts - Part 1
+## How we avoid artifacts
 Those browsers (and Steam) fail to smoothly resize because they don't wait for the new frame to actually finish drawing before returning from WM_PAINT.
 In other words, Windows is being given the go-ahead to actually resize the window and display it in its new size before it has a frame ready for the new size.
-In this example, we've circumvented that problem simply by waiting for the render thread to finish the new frame before returning from WM_PAINT via a condition variable.
-
-## How we avoid artifacts - Part 2
-Aaaand because GPUs don't display things the instant you hand them work to do, we fudge the difference by sleeping for 2ms before returning from WM_PAINT. I've tested this part extensively. Without the sleep, you'll be at the mercy of a minor delay between CPU commands to the GPU and the GPU actually doing them. The sleep can make it work at a hardly-noticable cost to resizing responsiveness. I can't really notice it on my 95Hz monitor.
-If you have a good GPU, you may be able to get away with 1ms for the sleep. But 2ms was necessary to eliminate artifacts on my computer with an Intel HD 5000 iGPU from 2014. If you want to support computers that old, 2 is good. Otherwise, maybe 1 if you'd rather have the most responsive resizing possible.
-
-**IF YOU USE V-SYNC:** You WILL have artifacting. OR you can sleep in WM_PAINT for like 5-17 ms. 17 should be perfect for 60fps displays. Less for higher refresh rates. Basically you'll need to wait for "up to" the length of a full frame. Typical v-sync delay from user input. I personally hate v-sync. It kills responsiveness. But I'd still use it for playing videos or things like that to eliminate tearing when it matters most. Here we're just discussing everything in relation to responsive window resizing.
+In this example, we've circumvented that problem by simply putting the main thread to sleep, in the middle of WM_PAINT, until the render thread reports back that it drew our requested frame. If you do this before calling EndPaint() and returning from WM_PAINT, you get smooth resizes.
 
 ## A few extra details
 - If we're not animating, we don't render! 0% CPU/GPU in that case. Laptop users love us.
