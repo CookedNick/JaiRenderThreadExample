@@ -23,7 +23,8 @@ In this example, we've circumvented that problem by simply putting the main thre
     - If it was already rendering, not a problem. It will continue. And we can wait in WM_PAINT for the one we requested to be done.
 - We're using Simp to render in this example. But you can do this with DirectX/Vulkan/whatever instead and it should work. So long as the library doesn't assume we live on the main thread. If you do end up in that situation, you could do the "Dangerous Threads Crew" (CMuratori) thing and put your WINDOWING logic in a background thread instead.
 - We're not using *modules/Input* or *modules/Window_Creation*. This is a **minimal** example and those modules are HUGE. But you could adapt them to do this, but they're not really designed to allow it.
-- We're syncing data between threads with our own primitive, `ThreadSafe`. It's just a generic type that wraps your value and provides a critical section for safe access across multiple threads. You'll see its usage throughout the code. I greatly prefer this way of doing things than trying to remember to manually enter/leave critical sections at the appropriate time. Your call.
+- We're syncing data between threads safely with a single critical section (a mutex). And one thread can sleep with a single condition variable to later be woken up by the other.
+  - The key to making inter-thread communications fast is to _do them as little as possible_. We only enter the critical section once in the render loop.
 
 ## License
 The license of this repository is the unlicense, so it's effectly public domain. Do whatever!
