@@ -1,4 +1,5 @@
 #import "Basic";
+#import "Atomics";
 #load "window.jai";
 #load "render.jai";
 
@@ -16,8 +17,11 @@ main :: () {
 	
 	// Since we don't have to do any rendering on this thread, this loop becomes quite simple.
 	while true {
-		// Handle OS messages.
+		// Handle all reamining OS messages.
 		if handleAllRemainingMessages(mainWindow) break;
+		
+		// Do this with some regularity.
+		reset_temporary_storage();
 		
 		// If there are no messages, sleep until there is a new one.
 		WaitMessage();

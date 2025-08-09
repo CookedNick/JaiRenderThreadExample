@@ -1,27 +1,57 @@
 Window :: struct {
+	hWnd: *void;
+	
 	// The current w/h. Updated automatically by the windowProc.
 	w, h: s32;
 	
-	// The minimum size of the window. You can adjust this directly, but the window will not be adjusted automatically nor will it grow if it's currently too small.
-	// Call setMinimumSize(*Window, POINT) instead to automatically handle all of that.
-	minimumSize: POINT;
+	// The minimum size of the window. You can adjust this directly, but the window will not be adjusted
+	// automatically nor will it grow if it's currently too small. Call setMinimumSize(*Window, POINT)
+	// instead to automatically handle all of that.
+	minSize: POINT;
+	
+	// Our lock between the threads.
+	criticalSection: CRITICAL_SECTION;
+	
+	// Our condition to wake a sleeping thread.
+	conditionVariable: CONDITION_VARIABLE;
+	
 	jaiContext: *#Context;
 	
-	// Render state for the window. Shared with the render thread.
-	using shared: SharedRenderState;
+	nextFrame: FrameInfo;
+	
+	FrameInfo :: struct {
+		// Synced by the windowProc with window.w, window.h.
+		w, h: float;
+		
+		// The time of an event. Like resuming/pausing the animation.
+		eventT: Apollo_Time;
+		
+		flags: enum_flags u8 {
+			windowSizeHasChanged :: 1;
+			terminateRenderThread :: 1 << 1;
+			toggleDemoAnimationPlayback :: 1 << 2;
+			skipToThisFrame :: 1 << 3;
+		} = .skipToThisFrame;
+	};
 }
 
-setMinimumSize :: ($$window: *Window, $$new: POINT) {
+
+setMinimumSize :: (window: *Window, new: POINT) {
 	// If needed, resize the window to be at least the new minimum size.
 	w, h := window.w, window.h;
 	if w < new.x || h < new.y {
 		w, h = max(w, new.x), max(h, new.y);
 		window.w, window.h = w, h;
-		nextFrame := *window.shared.nextFrame;
-		threadSafeAccess(nextFrame, #code {
-			nextFrame.value.windowW = xx w;
-			nextFrame.value.windowH = xx h;
-		});
+		EnterCriticalSection(*window.criticalSection);
+		window.nextFrame.w = xx w;
+		window.nextFrame.h = xx h;
+		
+		window.nextFrame.flags |= (.windowSizeHasChanged | .skipToThisFrame);
+
+		// Wake up the render thread if it's sleeping.
+		WakeConditionVariable(*window.conditionVariable);
+		
+		LeaveCriticalSection(*window.criticalSection);
 		SetWindowPos(window.hWnd, null, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
 	}
 	
@@ -30,7 +60,7 @@ setMinimumSize :: ($$window: *Window, $$new: POINT) {
 	AdjustWindowRect(*windowRECT, WS_OVERLAPPEDWINDOW, .FALSE);
 	
 	// Set the minimum size. This gets reported to Windows in the windowProc during WM_GETMINMAXINFO.
-	window.minimumSize = .{
+	window.minSize = .{
 		windowRECT.right - windowRECT.left,
 		windowRECT.bottom - windowRECT.top
 	};
@@ -65,20 +95,19 @@ createAndShowWindow :: ($$title: string, x: s32 = CW_USEDEFAULT, y: s32 = CW_USE
 			adjustedH = windowRECT.bottom - windowRECT.top;
 	}
 	
-	
 	// Make our window.
 	window := New(Window, initialized = false);
 	window.* = .{
 		jaiContext = *context,
 		hWnd = CreateWindowExW(0, windowClass.lpszClassName, wide(title), WS_OVERLAPPEDWINDOW, x, y, adjustedW, adjustedH, null, null, hInstance, null)
 	};
-	init(*window.shared);
+	InitializeCriticalSection(*window.criticalSection);
+	InitializeConditionVariable(*window.conditionVariable);
 	
 	// Get its initial size.
 	window.w, window.h = getWindowSize(window.hWnd);
-	nextFrame := *window.shared.nextFrame.value;
-	nextFrame.windowW = xx window.w;
-	nextFrame.windowH = xx window.h;
+	window.nextFrame.w = xx window.w;
+	window.nextFrame.h = xx window.h;
 	UpdateWindow(window.hWnd);
 	ShowWindow(window.hWnd, SW_SHOW);
 	
@@ -123,40 +152,18 @@ handleAllRemainingMessages :: (using window: *Window) -> quit: bool {
 			case WM_KEYDOWN;
 				if wParam == {
 					case #char " "; // Spacebar. Pause/resume the demo animation.
+						eventT := current_time_monotonic();
+						
 						if !isRepeating(lParam) {
 							// Pause/Resume animation
+							EnterCriticalSection(*window.criticalSection);
+							window.nextFrame.eventT = eventT;
+							window.nextFrame.flags |= (.toggleDemoAnimationPlayback | .skipToThisFrame);
 							
-							// I know everyone likes performance counters (Basic.current_time_monotonic() uses one),
-							// but the value of GetTickCount64() is that it will give you the exact same timestamp
-							// in milliseconds as the keydown event (I'd get it directly, but the MSG version is only
-							// 32-bit. But GetTickCount64() returns the exact same timestamp in 64-bit. So this is the
-							// best way to align stuff to the moment of keydown. current_time_monotonic() will be a
-							// more precise measurement (sub-ms), but it will be report a later time than the actual event.
-							messageT := GetTickCount64();
+							// Wake up the render thread if it's sleeping.
+							WakeConditionVariable(*window.conditionVariable);
 							
-							shared := *window.shared;
-							nextFrame := *shared.nextFrame;
-							
-							threadSafeAccess(nextFrame, #code {
-								if nextFrame.value.flags & .animatingDemo {
-									// The animation is playing. Pause it.
-									nextFrame.value.flags -= (.renderIndefinitely | .animatingDemo);
-									
-									// And let's update the animation up to the timestamp of this keypress.
-									updateDemoAnimation(*nextFrame.value, messageT);
-									
-									// If the animation is playing, we can assume the render thread was active. So no need to wake.
-								} else {
-									// The animation is not playing. Start it.
-									nextFrame.value.flags |= (.renderIndefinitely | .animatingDemo);
-									
-									// Resuming from the time of the keypress.
-									nextFrame.value.demoAnimationLastUpdateT = messageT;
-									
-									// Wake the render thread if needed.
-									signal(*shared.renderThreadShouldWakeUpIfSleeping);
-								}
-							});
+							LeaveCriticalSection(*window.criticalSection);
 							
 							continue;
 						}
@@ -186,9 +193,8 @@ kernel32 :: #system_library "kernel32";
 GWLP_WNDPROC :: -4;
 GWLP_USERDATA :: -21;
 
-
-// mainWindowUpdateSize :: () #no_context {
-// }
+WM_ENTERSIZEMOVE :: 561;
+WM_EXITSIZEMOVE :: 562;
 
 windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_call {
 	window: *Window = xx GetWindowLongPtrW(hWnd, GWLP_USERDATA);
@@ -198,54 +204,57 @@ windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 			case WM_SIZE;
 				window.w, window.h = LOWORD(lParam), HIWORD(lParam);
 				
-				shared := *window.shared;
-				threadSafeAccess(*shared.nextFrame, #code {
-					shared.nextFrame.value.windowW = xx window.w;
-					shared.nextFrame.value.windowH = xx window.h;
-					shared.nextFrame.value.flags |= .windowSizeHasChanged;
-				});
-				
 				// We won't tell the render thread to wake up yet.
 				// We'll do that in WM_PAINT, which gets sent to us next.
 				
 				return 0;
 			case WM_PAINT;
-				shared := *window.shared;
 				BeginPaint(hWnd, null);
+				EnterCriticalSection(*window.criticalSection);
 				
-				// shared.renderThreadFinishedAFrame
-				
-				if signal(*shared.renderThreadShouldWakeUpIfSleeping) {
-					// The render thread was sleeping. Let's wait for our requested frame to finish.
-					await(*shared.renderThreadFinishedAFrame);
+				if window.nextFrame.w != xx window.w || window.nextFrame.h != xx window.h {
+					window.nextFrame.w, window.nextFrame.h = xx window.w, xx window.h;
+					window.nextFrame.flags |= (.windowSizeHasChanged | .skipToThisFrame);
 				} else {
-					// The render thread was not sleeping! Let's wait for two frames:
-					// 	1. the one it's currently working on:
-					await(*shared.renderThreadFinishedAFrame);
-					// 	2. the new one we wanted:
-					signal(*shared.renderThreadShouldWakeUpIfSleeping);
-					await(*shared.renderThreadFinishedAFrame);
+					window.nextFrame.flags |= .skipToThisFrame;
 				}
 				
+				// Wake up the render thread if it's sleeping.
+				WakeConditionVariable(*window.conditionVariable);
+				
+				// Go to sleep ourselves until we're woken up once the frame is done.
+				SleepConditionVariableCS(*window.conditionVariable, *window.criticalSection, WIN_TIMEOUT_INFINITE);
+				
+				LeaveCriticalSection(*window.criticalSection);
 				EndPaint(hWnd, null);
 				return 0;
 			case WM_GETMINMAXINFO;
-				(cast(*MINMAXINFO) lParam).ptMinTrackSize = window.minimumSize;
+				(cast(*MINMAXINFO) lParam).ptMinTrackSize = window.minSize;
 				return 0;
 			case WM_CLOSE; // The window is being closed.
-				shared := *window.shared;
+				EnterCriticalSection(*window.criticalSection);
 				
 				// Tell the render thread to terminate.
-				threadSafeAccess(*shared.flags, #code { shared.flags.value |= .renderThreadShouldTerminate; });
+				window.nextFrame.flags |= .terminateRenderThread | .skipToThisFrame;
 				
-				// Only after we know the render thread has terminated, do we destroy the hWnd.
-				signal(*shared.renderThreadShouldWakeUpIfSleeping);
-				await(*shared.renderThreadTerminated);
+				// Wake the render thread if it's sleeping.
+				WakeConditionVariable(*window.conditionVariable);
+				
+				// Go to sleep until the render thread has cleaned up. You can remove this line and it's mostly fine if you're just rushing to close.
+				SleepConditionVariableCS(*window.conditionVariable, *window.criticalSection, WIN_TIMEOUT_INFINITE);
+				
+				LeaveCriticalSection(*window.criticalSection);
+				
+				// Only after we know the render thread has terminated do we destroy the hWnd.
 				DestroyWindow(hWnd);
 				return 0;
 			case WM_DESTROY; // The hWnd was destroyed.
+				// Clean up.
+				DeleteCriticalSection(*window.criticalSection);
+				
 				// Send WM_QUIT to our main thread.
 				PostQuitMessage(0);
+				
 				return 0;
 		}
 		
