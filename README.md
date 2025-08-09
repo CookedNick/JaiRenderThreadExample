@@ -17,9 +17,6 @@ In other words, Windows is being given the go-ahead to actually resize the windo
 In this example, we've circumvented that problem by simply putting the main thread to sleep, in the middle of WM_PAINT, until the render thread reports back that it drew our requested frame. If you do this before calling EndPaint() and returning from WM_PAINT, you get smooth resizes.
 **Thank you, Patrik Smělý, for telling me about this approach.** (He got this working on macOS first.)
 
-## How we avoid artifacts - Part 2
-Additionally, GPUs do not actually draw things the second we request them to. According to Ryan Fleury (whom I trust implicitly on this), there is not an easy way to know for certain that our frame is actually done on the GPU. To mitigate this slightly, there's a 1 millisecond sleep at the end of WM_PAINT in this example. You can remove that. It's honestly barely noticeable, but I did notice what he was talking about (minor artifacts, some black color) when I resized the window extremely quickly with a high-DPI mouse. Experiment with commenting/uncommenting this line and see if you care. The sleep can help but it introduces a (very minor) bit of lag when resizing the window.
-
 ## A few extra details
 - If we're not animating, we don't render! 0% CPU/GPU in that case. Laptop users love us.
   - When we need to, we can wake the render thread and have it either draw a single frame when something changed or to render continuously for an animation. For example, WM_PAINT wakes it up to draw a single frame.
