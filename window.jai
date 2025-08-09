@@ -228,10 +228,11 @@ windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 				}
 				
 				// Ryan Fleury told me that we don't actually know for sure when the GPU will
-				// display our frame, even if we've called swap_buffers. So if you still see some
-				// artifacting during resizes despite all our efforts thus far, you could uncomment
-				// this line.
-				// sleep_milliseconds(1);
+				// display our frame, even if we've called swap_buffers. So this sleep is here
+				// to give the GPU a chance to actually draw. It does introduce an extremely minor
+				// amount of lag to this message event, so your resizes will be ever so slightly
+				// less responsive. But you'll still be WAY more responsive than most programs.
+				sleep_milliseconds(1);
 				
 				EndPaint(hWnd, null);
 				return 0;
