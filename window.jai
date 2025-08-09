@@ -212,17 +212,26 @@ windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 			case WM_PAINT;
 				shared := *window.shared;
 				BeginPaint(hWnd, null);
-				signal(*shared.renderThreadShouldWakeUpIfSleeping);
-				await(*shared.renderThreadFinishedAFrame);
 				
-				// Since we don't know when the GPU will actually display the frame (lol gpus),
-				// we'll just sleep here to stop Windows from redrawing the window border for 2ms.
-				// This one line is really responsible for the good resizing behavior.
-				// If you remove this sleep, you'll get some artifacting, BUT Windows will poll
-				// your mouse for resize movements more often while you're dragging the window border.
-				// Meaning you can remove this to increase mouse-responsiveness at the cost of visual
-				// artifacts when resizing (or occasionally when moving) your window.
-				sleep_milliseconds(2);
+				// shared.renderThreadFinishedAFrame
+				
+				if signal(*shared.renderThreadShouldWakeUpIfSleeping) {
+					// The render thread was sleeping. Let's wait for our requested frame to finish.
+					await(*shared.renderThreadFinishedAFrame);
+				} else {
+					// The render thread was not sleeping! Let's wait for two frames:
+					// 	1. the one it's currently working on:
+					await(*shared.renderThreadFinishedAFrame);
+					// 	2. the new one we wanted:
+					signal(*shared.renderThreadShouldWakeUpIfSleeping);
+					await(*shared.renderThreadFinishedAFrame);
+				}
+				
+				// Ryan Fleury told me that we don't actually know for sure when the GPU will
+				// display our frame, even if we've called swap_buffers. So if you still see some
+				// artifacting during resizes despite all our efforts thus far, you could uncomment
+				// this line.
+				// sleep_milliseconds(1);
 				
 				EndPaint(hWnd, null);
 				return 0;

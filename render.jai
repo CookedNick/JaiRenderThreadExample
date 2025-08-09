@@ -117,12 +117,16 @@ threadSafeCopy :: (using ts: *ThreadSafe($T)) -> T {
 // A primitive to say "Let's sleep until another thread wakes us up." Make sure in advance that
 // you actually are going to be woken up. (Ensure the other thread is awake, etc.)
 Awaitable :: struct {
-	using ts: ThreadSafe(CONDITION_VARIABLE);
+	using ts: ThreadSafe(Data);
+	Data :: struct {
+		conditionVariable: CONDITION_VARIABLE;
+		threadsCurrentlySleeping: int;
+	}
 }
 
 init :: (using awaitable: *Awaitable) {
 	init(*ts);
-	InitializeConditionVariable(*value);
+	InitializeConditionVariable(*value.conditionVariable);
 }
 
 deinit :: inline (using awaitable: *Awaitable) {
@@ -132,15 +136,20 @@ deinit :: inline (using awaitable: *Awaitable) {
 // Go to sleep until woken up by another thread.
 await :: (using awaitable: *Awaitable) {
 	threadSafeAccess(*ts, #code {
-		SleepConditionVariableCS(*value, *criticalSection, WIN_TIMEOUT_INFINITE);
+		value.threadsCurrentlySleeping += 1;
+		SleepConditionVariableCS(*value.conditionVariable, *criticalSection, WIN_TIMEOUT_INFINITE);
+		value.threadsCurrentlySleeping -= 1;
 	});
 }
 
 // Signal another thread to wake up if it's sleeping.
-signal :: (using awaitable: *Awaitable) {
+signal :: (using awaitable: *Awaitable) -> aThreadWasWokenUp: bool {
+	aThreadWasWokenUp: bool = ---;
 	threadSafeAccess(*ts, #code {
-		WakeConditionVariable(*value);
+		aThreadWasWokenUp = xx value.threadsCurrentlySleeping;
+		WakeConditionVariable(*value.conditionVariable);
 	});
+	return aThreadWasWokenUp;
 }
 
 
@@ -196,14 +205,13 @@ enterRenderThread :: (using shared: *SharedRenderState) -> u32 #c_call {
 	push_context renderThreadContext {
 		// Simp in particular does not work across multiple threads.
 		// Most rendering APIs don't. (Do any?)
-		// So here is where you'd init that sort of thing. Not on the main thread.
+		// So here is where you'd init that sort of thing. In the same thread where we'll render.
+		// No Simp stuff ever gets called from other threads, only this one.
+		// You could modify Simp to support that, if you wanted, but this example will remain minimal.
 		Simp.set_render_target(hWnd);
 		Simp.set_shader_for_color(false);
 		
-		// Disable vsync. Up to you. But Vsync increases the amount of time it takes for the GPU to display our frame, so
-		// if you want it, you'll need to increase the number of ms we sleep in WM_PAINT to maintain smooth resizing, which
-		// also means window resizing will be slightly less responsive. But this is a small price of perfect visuals. I
-		// recommend experimenting and picking the behavior that feels the best to you for your program.
+		// Disable vsync. Up to you. Our smooth resizes work either way.
 		GL.wglSwapIntervalEXT(0);
 		
 		// Start the animation.
@@ -227,9 +235,6 @@ enterRenderThread :: (using shared: *SharedRenderState) -> u32 #c_call {
 				if flags & .windowSizeHasChanged {
 					flags -= .windowSizeHasChanged;
 					Simp.update_window(hWnd);
-					
-					// DEMO: Just demonstrating that it works.
-					print("New Window Size: w=%, h=%\n", thisFrame.windowW, thisFrame.windowH);
 				}
 				
 				if flags & .animatingDemo
@@ -272,11 +277,13 @@ enterRenderThread :: (using shared: *SharedRenderState) -> u32 #c_call {
 				color = .{demoAnimationProgress, demoAnimationProgress, 1 - demoAnimationProgress, 1}
 			);
 			
+			// Update the window.
 			Simp.swap_buffers(hWnd);
 			
-			// Tell other threads we finished drawing a frame.
+			// Tell other threads we finished drawing a frame. WM_PAINT waits for this signal before returning.
 			signal(*shared.renderThreadFinishedAFrame);
 			
+			// Frame-local cleanup.
 			reset_temporary_storage();
 			
 			// If we're not rendering indefinitely, sleep.
