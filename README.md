@@ -11,11 +11,14 @@ Here I've solved this by rendering in a background thread. This enables two thin
 2. **The main thread can now be solely dedicated to receiving OS messages.** The main benefit of this is the ability to receive key presses and such mid-frame. You could use this to start calculations or work related to user input *for the next frame* while the previous frame is still being drawn.
 This is the same solution web browsers use to keep playing a YouTube video while you stretch their windows. Only, web browsers tend to display artifacts during resizes. Check for yourself. Steam is also a program that is rather bad with these artifacts.
 
-## How we avoid artifacts
+## How we avoid artifacts - Part 1
 Those browsers (and Steam) fail to smoothly resize because they don't wait for the new frame to actually finish drawing before returning from WM_PAINT.
 In other words, Windows is being given the go-ahead to actually resize the window and display it in its new size before it has a frame ready for the new size.
 In this example, we've circumvented that problem by simply putting the main thread to sleep, in the middle of WM_PAINT, until the render thread reports back that it drew our requested frame. If you do this before calling EndPaint() and returning from WM_PAINT, you get smooth resizes.
 **Thank you, Patrik Smělý, for telling me about this approach.** (He got this working on macOS first.)
+
+## How we avoid artifacts - Part 2
+Additionally, GPUs do not actually draw things the second we request them to. According to Ryan Fleury (whom I trust implicitly on this), there is not an easy way to know for certain that our frame is actually done on the GPU. To mitigate this slightly, there's a 1 millisecond sleep at the end of WM_PAINT in this example. You can remove that. It's honestly barely noticeable, but I did notice what he was talking about (minor artifacts, some black color) when I resized the window extremely quickly with a high-DPI mouse. Experiment with commenting/uncommenting this line and see if you care. The sleep can help but it introduces a (very minor) bit of lag when resizing the window.
 
 ## A few extra details
 - If we're not animating, we don't render! 0% CPU/GPU in that case. Laptop users love us.
