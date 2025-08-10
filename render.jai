@@ -79,9 +79,6 @@ enterRenderThread :: (window: *Window) -> u32 #c_call {
 		dc: *void;
 		fence: GLsync = ---;
 		
-		demoAnimation.lastUpdateT = current_time_monotonic();
-		demoAnimation.flags = .isRunning;
-		
 		// WakeConditionVariable(*window.conditionVariable);
 		
 		while true {
