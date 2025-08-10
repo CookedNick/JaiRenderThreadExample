@@ -31,4 +31,4 @@ In this example, we've circumvented that problem by simply putting the main thre
 The license of this repository is the unlicense, so it's effectively public domain. No credit needed. Go nuts. Glad I could help.
 
 ## Questions?
-If you're in the beta Discord for Jai, ping me `@CookedNick`. I'm findable by my name in there. Otherwise, I'm on Twitter. Same handle.
+If you're in the beta Discord for Jai, ping me `@CookedNick`. Otherwise, I'm on Twitter. Same handle.
