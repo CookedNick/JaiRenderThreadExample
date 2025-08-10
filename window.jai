@@ -180,9 +180,6 @@ handleAllRemainingMessages :: (using window: *Window) -> quit: bool {
 // Sleep until Windows gives us a message.
 WaitMessage :: () -> s32 #foreign user32;
 
-// System timestamp in ms. More aligned with "right now" than performance counters. But less precise. (ms instead of ns or whatever)
-GetTickCount64 :: () -> u64 #foreign kernel32;
-
 
 #scope_file
 
