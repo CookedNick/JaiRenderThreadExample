@@ -8,7 +8,7 @@ main :: () {
 	
 	// Create/show the window.
 	mainWindowMinimumSize := POINT.{ cast(s32) demoQuadLength*3, cast(s32) demoQuadLength*3 };
-	mainWindow := createAndShowWindow("A great window. Press space to pause/resume the animation.", w = mainWindowMinimumSize.x, h = mainWindowMinimumSize.y);
+	mainWindow := createAndShowWindow("A great window. Press space to pause/resume the animation.", w = mainWindowMinimumSize.x * 3, h = mainWindowMinimumSize.y);
 	setMinimumSize(mainWindow, mainWindowMinimumSize);
 	
 	// Start rendering.
