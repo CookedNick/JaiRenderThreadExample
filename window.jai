@@ -30,8 +30,8 @@ Window :: struct {
 			windowSizeHasChanged :: 1;
 			terminateRenderThread :: 1 << 1;
 			toggleDemoAnimationPlayback :: 1 << 2;
-			skipToThisFrame :: 1 << 3;
-		} = .skipToThisFrame;
+			wakeMainThreadWhenCompleted :: 1 << 3;
+		} = .wakeMainThreadWhenCompleted;
 	};
 }
 
@@ -46,7 +46,7 @@ setMinimumSize :: (window: *Window, new: POINT) {
 		window.nextFrame.w = xx w;
 		window.nextFrame.h = xx h;
 		
-		window.nextFrame.flags |= (.windowSizeHasChanged | .skipToThisFrame);
+		window.nextFrame.flags |= (.windowSizeHasChanged | .wakeMainThreadWhenCompleted);
 
 		// Wake up the render thread if it's sleeping.
 		WakeConditionVariable(*window.conditionVariable);
@@ -158,7 +158,7 @@ handleAllRemainingMessages :: (using window: *Window) -> quit: bool {
 							// Pause/Resume animation
 							EnterCriticalSection(*window.criticalSection);
 							window.nextFrame.eventT = eventT;
-							window.nextFrame.flags |= (.toggleDemoAnimationPlayback | .skipToThisFrame);
+							window.nextFrame.flags |= (.toggleDemoAnimationPlayback | .wakeMainThreadWhenCompleted);
 							
 							// Wake up the render thread if it's sleeping.
 							WakeConditionVariable(*window.conditionVariable);
@@ -211,9 +211,9 @@ windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 				
 				if window.nextFrame.w != xx window.w || window.nextFrame.h != xx window.h {
 					window.nextFrame.w, window.nextFrame.h = xx window.w, xx window.h;
-					window.nextFrame.flags |= (.windowSizeHasChanged | .skipToThisFrame);
+					window.nextFrame.flags |= (.windowSizeHasChanged | .wakeMainThreadWhenCompleted);
 				} else {
-					window.nextFrame.flags |= .skipToThisFrame;
+					window.nextFrame.flags |= .wakeMainThreadWhenCompleted;
 				}
 				
 				// Wake up the render thread if it's sleeping.
@@ -232,7 +232,7 @@ windowProc :: (hWnd: *void, message: u32, wParam: u64, lParam: s64) -> s64 #c_ca
 				EnterCriticalSection(*window.criticalSection);
 				
 				// Tell the render thread to terminate.
-				window.nextFrame.flags |= .terminateRenderThread | .skipToThisFrame;
+				window.nextFrame.flags |= .terminateRenderThread | .wakeMainThreadWhenCompleted;
 				
 				// Wake the render thread if it's sleeping.
 				WakeConditionVariable(*window.conditionVariable);

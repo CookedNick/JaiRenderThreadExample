@@ -88,11 +88,6 @@ enterRenderThread :: (window: *Window) -> u32 #c_call {
 			// Synchronize the threads.
 			EnterCriticalSection(*window.criticalSection);
 			
-			// Wake the main thread if we finished the frame it wanted us to draw (the one we skipped to).
-			if thisFrame.flags & .skipToThisFrame && !(window.nextFrame.flags & .skipToThisFrame) {
-				WakeConditionVariable(*window.conditionVariable);
-			}
-			
 			// If both of these are true, we don't need to render a frame.
 			// 	Condition 1: The next frame doesn't have any flags set.
 			// 	Condition 2: We aren't animating.
@@ -198,6 +193,10 @@ enterRenderThread :: (window: *Window) -> u32 #c_call {
 			now := current_time_monotonic();
 			previousDeltaT = now - previousDrawT;
 			previousDrawT = now;
+			
+			// Wake the main thread if we finished the frame it wanted us to draw.
+			if thisFrame.flags & .wakeMainThreadWhenCompleted
+				WakeConditionVariable(*window.conditionVariable);
 			
 			// Frame-local cleanup.
 			reset_temporary_storage();
