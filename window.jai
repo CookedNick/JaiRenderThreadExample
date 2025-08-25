@@ -4,9 +4,9 @@ Window :: struct {
 	// The current w/h. Updated automatically by the windowProc.
 	w, h: s32;
 	
-	// The minimum size of the window. You can adjust this directly, but the window will not be adjusted
-	// automatically nor will it grow if it's currently too small. Call setMinimumSize(*Window, POINT)
-	// instead to automatically handle all of that.
+	// The minimum size of the window. You can adjust this directly, and new resize events will respect this value,
+	// BUT the window will not be adjusted automatically when setting this. I've created setMinimumSize(*Window, POINT)
+	// for this. It adjusts this value AND adjusts the window's size "right now" to be >= the new minSize.
 	minSize: POINT;
 	
 	// Our lock between the threads.
