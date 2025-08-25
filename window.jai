@@ -120,7 +120,7 @@ createAndShowWindow :: ($$title: string, x: s32 = CW_USEDEFAULT, y: s32 = CW_USE
 	return window;
 }
 
-getWindowSize :: ($$hWnd: *void) -> w: s32, h: s32 {
+getWindowSize :: (hWnd: *void) -> w: s32, h: s32 {
 	// Get the size.
 	windowRECT: RECT;
 	GetClientRect(hWnd, *windowRECT);
