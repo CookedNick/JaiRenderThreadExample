@@ -78,7 +78,7 @@ createAndShowWindow :: ($$title: string, x: s32 = CW_USEDEFAULT, y: s32 = CW_USE
 		hCursor = LoadCursorW(null, IDC_ARROW),
 		lpszClassName = wide("ResponsiveRenderingWindow"),
 		hbrBackground = null, // No background since we're replacing the window's entire contents every frame ourselves.
-		lpfnWndProc = DefWindowProcW
+		lpfnWndProc = DefWindowProcW // Use the default window proc for now because our window proc assumes everything has already been set up.
 	};
 	RegisterClassExW(*windowClass);
 	
